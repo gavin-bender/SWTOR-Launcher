@@ -13,23 +13,21 @@ does not click Login for you.
 - Reads your password from a 1Password item
 - Reads the current TOTP/one-time password from the same item
 - Types both values into the launcher with `xdotool`
-- Shows desktop popups for progress and failures
+- Sends desktop notifications for progress and failures
 
 ## Requirements
 
 - Linux with Steam
 - SWTOR installed through Steam
 - `xdotool`
-- `zenity` for desktop popup dialogs
-- `kdialog` as a KDE passive-popup fallback
-- `notify-send` as a fallback desktop message backend
+- `notify-send` for desktop notifications
 - 1Password CLI, `op`
 - A signed-in 1Password CLI session
 
 On Arch Linux:
 
 ```sh
-sudo pacman -S xdotool zenity kdialog libnotify
+sudo pacman -S xdotool libnotify
 ```
 
 Install the 1Password CLI separately, then sign in:
@@ -89,7 +87,7 @@ SWTOR_TABS_TO_OTP=1
 SWTOR_NOTIFY=1
 ```
 
-Set `SWTOR_NOTIFY=0` to disable desktop popups/messages.
+Set `SWTOR_NOTIFY=0` to disable desktop notifications.
 
 If the password or OTP lands in the wrong field, adjust:
 
@@ -108,7 +106,7 @@ Check dependencies and 1Password access:
 ./swtor-login --check
 ```
 
-Send a test popup/message:
+Send a test notification:
 
 ```sh
 ./swtor-login --test-notify
@@ -168,21 +166,9 @@ Run SWTOR normally, leave the launcher open, then tune the Tab settings:
 Edit `~/.config/swtor-launcher/config` until the password and OTP land in the
 right fields.
 
-### No Popups
+### No Notifications
 
-Check that `zenity` exists:
-
-```sh
-command -v zenity
-```
-
-If `zenity` is unavailable, the script falls back to `kdialog`:
-
-```sh
-command -v kdialog
-```
-
-If `kdialog` is also unavailable, the script falls back to `notify-send`:
+Check that `notify-send` exists:
 
 ```sh
 command -v notify-send

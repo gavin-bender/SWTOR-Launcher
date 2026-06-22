@@ -29,7 +29,7 @@ Options:
   --check        Verify dependencies and 1Password access, then exit.
   --no-launch    Do not start Steam; fill an already-open launcher window.
   --init-config  Create ~/.config/swtor-launcher/config if it does not exist.
-  --test-notify  Send a test desktop popup/message, then exit.
+  --test-notify  Send a test desktop notification, then exit.
   --help         Show this help.
 
 Configuration:
@@ -69,24 +69,6 @@ desktop_message() {
   local message="$3"
 
   if [[ "$SWTOR_NOTIFY" != "1" ]]; then
-    return 0
-  fi
-
-  if command -v zenity >/dev/null 2>&1; then
-    if [[ "$urgency" == "critical" ]]; then
-      zenity --error --title="$title" --text="$message" --width=360 >/dev/null 2>&1 || true
-    else
-      zenity --info --title="$title" --text="$message" --width=360 --timeout=5 >/dev/null 2>&1 &
-    fi
-    return 0
-  fi
-
-  if command -v kdialog >/dev/null 2>&1; then
-    if [[ "$urgency" == "critical" ]]; then
-      kdialog --title "$title" --error "$message" >/dev/null 2>&1 || true
-    else
-      kdialog --title "$title" --passivepopup "$message" 5 >/dev/null 2>&1 || true
-    fi
     return 0
   fi
 
@@ -305,8 +287,8 @@ main() {
   fi
 
   if [[ "$MODE" == "test-notify" ]]; then
-    desktop_message normal "SWTOR autofill" "Desktop popups/messages are working."
-    printf 'swtor-login: sent test desktop message\n' >&2
+    desktop_message normal "SWTOR autofill" "Desktop notifications are working."
+    printf 'swtor-login: sent test notification\n' >&2
     return 0
   fi
 
