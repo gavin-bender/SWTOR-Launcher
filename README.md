@@ -20,7 +20,8 @@ does not click Login for you.
 - Linux with Steam
 - SWTOR installed through Steam
 - `xdotool`
-- `kdialog` for KDE desktop popups
+- `zenity` for desktop popup dialogs
+- `kdialog` as a KDE passive-popup fallback
 - `notify-send` as a fallback desktop message backend
 - 1Password CLI, `op`
 - A signed-in 1Password CLI session
@@ -28,7 +29,7 @@ does not click Login for you.
 On Arch Linux:
 
 ```sh
-sudo pacman -S xdotool kdialog libnotify
+sudo pacman -S xdotool zenity kdialog libnotify
 ```
 
 Install the 1Password CLI separately, then sign in:
@@ -169,13 +170,19 @@ right fields.
 
 ### No Popups
 
-Check that `kdialog` exists:
+Check that `zenity` exists:
+
+```sh
+command -v zenity
+```
+
+If `zenity` is unavailable, the script falls back to `kdialog`:
 
 ```sh
 command -v kdialog
 ```
 
-If `kdialog` is unavailable, the script falls back to `notify-send`:
+If `kdialog` is also unavailable, the script falls back to `notify-send`:
 
 ```sh
 command -v notify-send

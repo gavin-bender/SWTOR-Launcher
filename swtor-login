@@ -72,6 +72,15 @@ desktop_message() {
     return 0
   fi
 
+  if command -v zenity >/dev/null 2>&1; then
+    if [[ "$urgency" == "critical" ]]; then
+      zenity --error --title="$title" --text="$message" --width=360 >/dev/null 2>&1 || true
+    else
+      zenity --info --title="$title" --text="$message" --width=360 --timeout=5 >/dev/null 2>&1 &
+    fi
+    return 0
+  fi
+
   if command -v kdialog >/dev/null 2>&1; then
     if [[ "$urgency" == "critical" ]]; then
       kdialog --title "$title" --error "$message" >/dev/null 2>&1 || true
