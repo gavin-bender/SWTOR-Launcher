@@ -29,7 +29,7 @@ Options:
   --check        Verify dependencies and 1Password access, then exit.
   --no-launch    Do not start Steam; fill an already-open launcher window.
   --init-config  Create ~/.config/swtor-launcher/config if it does not exist.
-  --test-notify  Send a test desktop notification, then exit.
+  --test-notify  Send a test desktop popup/message, then exit.
   --help         Show this help.
 
 Configuration:
@@ -52,7 +52,7 @@ die() {
   local message="$*"
 
   printf 'swtor-login: %s\n' "$message" >&2
-  notify critical "SWTOR autofill failed" "$message"
+  desktop_message critical "SWTOR autofill failed" "$message"
   exit 1
 }
 
@@ -60,15 +60,24 @@ info() {
   local message="$*"
 
   printf 'swtor-login: %s\n' "$message" >&2
-  notify normal "SWTOR autofill" "$message"
+  desktop_message normal "SWTOR autofill" "$message"
 }
 
-notify() {
+desktop_message() {
   local urgency="$1"
   local title="$2"
   local message="$3"
 
   if [[ "$SWTOR_NOTIFY" != "1" ]]; then
+    return 0
+  fi
+
+  if command -v kdialog >/dev/null 2>&1; then
+    if [[ "$urgency" == "critical" ]]; then
+      kdialog --title "$title" --error "$message" >/dev/null 2>&1 || true
+    else
+      kdialog --title "$title" --passivepopup "$message" 5 >/dev/null 2>&1 || true
+    fi
     return 0
   fi
 
@@ -287,8 +296,8 @@ main() {
   fi
 
   if [[ "$MODE" == "test-notify" ]]; then
-    notify normal "SWTOR autofill" "Desktop notifications are working."
-    printf 'swtor-login: sent test notification\n' >&2
+    desktop_message normal "SWTOR autofill" "Desktop popups/messages are working."
+    printf 'swtor-login: sent test desktop message\n' >&2
     return 0
   fi
 

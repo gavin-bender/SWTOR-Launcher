@@ -13,21 +13,22 @@ does not click Login for you.
 - Reads your password from a 1Password item
 - Reads the current TOTP/one-time password from the same item
 - Types both values into the launcher with `xdotool`
-- Sends desktop notifications for progress and failures
+- Shows desktop popups for progress and failures
 
 ## Requirements
 
 - Linux with Steam
 - SWTOR installed through Steam
 - `xdotool`
-- `notify-send` for desktop notifications
+- `kdialog` for KDE desktop popups
+- `notify-send` as a fallback desktop message backend
 - 1Password CLI, `op`
 - A signed-in 1Password CLI session
 
 On Arch Linux:
 
 ```sh
-sudo pacman -S xdotool libnotify
+sudo pacman -S xdotool kdialog libnotify
 ```
 
 Install the 1Password CLI separately, then sign in:
@@ -87,7 +88,7 @@ SWTOR_TABS_TO_OTP=1
 SWTOR_NOTIFY=1
 ```
 
-Set `SWTOR_NOTIFY=0` to disable desktop notifications.
+Set `SWTOR_NOTIFY=0` to disable desktop popups/messages.
 
 If the password or OTP lands in the wrong field, adjust:
 
@@ -106,7 +107,7 @@ Check dependencies and 1Password access:
 ./swtor-login --check
 ```
 
-Send a test notification:
+Send a test popup/message:
 
 ```sh
 ./swtor-login --test-notify
@@ -166,9 +167,15 @@ Run SWTOR normally, leave the launcher open, then tune the Tab settings:
 Edit `~/.config/swtor-launcher/config` until the password and OTP land in the
 right fields.
 
-### No Notifications
+### No Popups
 
-Check that `notify-send` exists:
+Check that `kdialog` exists:
+
+```sh
+command -v kdialog
+```
+
+If `kdialog` is unavailable, the script falls back to `notify-send`:
 
 ```sh
 command -v notify-send
