@@ -1,0 +1,317 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/swtor-launcher"
+CONFIG_FILE="$CONFIG_DIR/config"
+
+SWTOR_STEAM_APP_ID="${SWTOR_STEAM_APP_ID:-1286830}"
+SWTOR_1P_ITEM="${SWTOR_1P_ITEM:-SWTOR}"
+SWTOR_1P_VAULT="${SWTOR_1P_VAULT:-}"
+SWTOR_WINDOW_REGEX="${SWTOR_WINDOW_REGEX:-STAR WARS|The Old Republic|SWTOR|launcher}"
+SWTOR_WINDOW_TIMEOUT="${SWTOR_WINDOW_TIMEOUT:-120}"
+SWTOR_INITIAL_DELAY="${SWTOR_INITIAL_DELAY:-2}"
+SWTOR_TABS_TO_PASSWORD="${SWTOR_TABS_TO_PASSWORD:-0}"
+SWTOR_TABS_TO_OTP="${SWTOR_TABS_TO_OTP:-1}"
+SWTOR_TYPE_DELAY_MS="${SWTOR_TYPE_DELAY_MS:-30}"
+SWTOR_OTP_WAIT_SECONDS="${SWTOR_OTP_WAIT_SECONDS:-0}"
+SWTOR_NOTIFY="${SWTOR_NOTIFY:-1}"
+
+MODE="launch"
+
+usage() {
+  cat <<'EOF'
+Usage: ./swtor-login [--check] [--no-launch] [--init-config] [--test-notify] [--help]
+
+Launch SWTOR through Steam, fetch your password and TOTP from 1Password,
+and type them into the launcher using xdotool.
+
+Options:
+  --check        Verify dependencies and 1Password access, then exit.
+  --no-launch    Do not start Steam; fill an already-open launcher window.
+  --init-config  Create ~/.config/swtor-launcher/config if it does not exist.
+  --test-notify  Send a test desktop notification, then exit.
+  --help         Show this help.
+
+Configuration:
+  The script loads ~/.config/swtor-launcher/config when present. It should only
+  contain non-secret settings. Useful variables:
+
+    SWTOR_1P_ITEM=SWTOR
+    SWTOR_1P_VAULT=
+    SWTOR_STEAM_APP_ID=1286830
+    SWTOR_WINDOW_REGEX='STAR WARS|The Old Republic|SWTOR|launcher'
+    SWTOR_TABS_TO_PASSWORD=0
+    SWTOR_TABS_TO_OTP=1
+    SWTOR_NOTIFY=1
+
+The tool fills only. It does not press Login.
+EOF
+}
+
+die() {
+  local message="$*"
+
+  printf 'swtor-login: %s\n' "$message" >&2
+  notify critical "SWTOR autofill failed" "$message"
+  exit 1
+}
+
+info() {
+  local message="$*"
+
+  printf 'swtor-login: %s\n' "$message" >&2
+  notify normal "SWTOR autofill" "$message"
+}
+
+notify() {
+  local urgency="$1"
+  local title="$2"
+  local message="$3"
+
+  if [[ "$SWTOR_NOTIFY" != "1" ]]; then
+    return 0
+  fi
+
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send --app-name="SWTOR Launcher" --urgency="$urgency" "$title" "$message" >/dev/null 2>&1 || true
+  fi
+}
+
+load_config() {
+  if [[ -f "$CONFIG_FILE" ]]; then
+    # shellcheck source=/dev/null
+    source "$CONFIG_FILE"
+  fi
+}
+
+write_default_config() {
+  mkdir -p "$CONFIG_DIR"
+
+  if [[ -e "$CONFIG_FILE" ]]; then
+    info "config already exists: $CONFIG_FILE"
+    return 0
+  fi
+
+  cat >"$CONFIG_FILE" <<'EOF'
+# SWTOR launcher autofill settings. Do not put secrets in this file.
+
+SWTOR_1P_ITEM=SWTOR
+SWTOR_1P_VAULT=
+
+SWTOR_STEAM_APP_ID=1286830
+SWTOR_WINDOW_REGEX='STAR WARS|The Old Republic|SWTOR|launcher'
+SWTOR_WINDOW_TIMEOUT=120
+SWTOR_INITIAL_DELAY=2
+
+# Tab navigation is relative to the launcher window after it is activated.
+# Tune these with: ./swtor-login --no-launch
+SWTOR_TABS_TO_PASSWORD=0
+SWTOR_TABS_TO_OTP=1
+
+SWTOR_TYPE_DELAY_MS=30
+SWTOR_OTP_WAIT_SECONDS=0
+SWTOR_NOTIFY=1
+EOF
+
+  chmod 600 "$CONFIG_FILE"
+  info "created config: $CONFIG_FILE"
+}
+
+require_command() {
+  local command_name="$1"
+  local install_hint="$2"
+
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    die "missing '$command_name'. $install_hint"
+  fi
+}
+
+require_number() {
+  local name="$1"
+  local value="$2"
+
+  if ! [[ "$value" =~ ^[0-9]+$ ]]; then
+    die "$name must be a non-negative integer; got '$value'"
+  fi
+}
+
+op_item_args() {
+  local args=("item" "get" "$SWTOR_1P_ITEM")
+
+  if [[ -n "$SWTOR_1P_VAULT" ]]; then
+    args+=("--vault" "$SWTOR_1P_VAULT")
+  fi
+
+  printf '%s\0' "${args[@]}"
+}
+
+run_op_item_get() {
+  local extra_args=("$@")
+  local base_args=()
+
+  while IFS= read -r -d '' arg; do
+    base_args+=("$arg")
+  done < <(op_item_args)
+
+  op "${base_args[@]}" "${extra_args[@]}"
+}
+
+check_dependencies() {
+  require_command steam "Install Steam or make sure it is on PATH."
+  require_command xdotool "Install xdotool. On Arch: sudo pacman -S xdotool"
+  require_command op "Install the 1Password CLI, then run 'op signin'."
+
+  [[ -n "${DISPLAY:-}" ]] || die "DISPLAY is not set; xdotool needs an X/XWayland display."
+
+  require_number SWTOR_WINDOW_TIMEOUT "$SWTOR_WINDOW_TIMEOUT"
+  require_number SWTOR_INITIAL_DELAY "$SWTOR_INITIAL_DELAY"
+  require_number SWTOR_TABS_TO_PASSWORD "$SWTOR_TABS_TO_PASSWORD"
+  require_number SWTOR_TABS_TO_OTP "$SWTOR_TABS_TO_OTP"
+  require_number SWTOR_TYPE_DELAY_MS "$SWTOR_TYPE_DELAY_MS"
+  require_number SWTOR_OTP_WAIT_SECONDS "$SWTOR_OTP_WAIT_SECONDS"
+
+  if [[ "$SWTOR_NOTIFY" != "0" && "$SWTOR_NOTIFY" != "1" ]]; then
+    die "SWTOR_NOTIFY must be 0 or 1; got '$SWTOR_NOTIFY'"
+  fi
+}
+
+check_1password_access() {
+  if ! run_op_item_get --fields password --reveal >/dev/null 2>&1; then
+    die "could not read password from 1Password item '$SWTOR_1P_ITEM'. Check the item name, vault, and 'op signin'."
+  fi
+
+  if ! run_op_item_get --otp >/dev/null 2>&1; then
+    die "could not read TOTP from 1Password item '$SWTOR_1P_ITEM'. Check that the item has a one-time password field."
+  fi
+}
+
+launch_swtor() {
+  info "launching Steam app $SWTOR_STEAM_APP_ID"
+  steam "steam://rungameid/$SWTOR_STEAM_APP_ID" >/dev/null 2>&1 &
+}
+
+wait_for_window() {
+  local deadline=$((SECONDS + SWTOR_WINDOW_TIMEOUT))
+  local window_id=""
+
+  info "waiting for launcher window matching: $SWTOR_WINDOW_REGEX"
+
+  while (( SECONDS < deadline )); do
+    window_id="$(xdotool search --onlyvisible --name "$SWTOR_WINDOW_REGEX" 2>/dev/null | tail -n 1 || true)"
+    if [[ -n "$window_id" ]]; then
+      printf '%s\n' "$window_id"
+      return 0
+    fi
+    sleep 1
+  done
+
+  die "timed out after ${SWTOR_WINDOW_TIMEOUT}s waiting for the launcher window"
+}
+
+press_tabs() {
+  local count="$1"
+  local i
+
+  for ((i = 0; i < count; i++)); do
+    xdotool key Tab
+    sleep 0.1
+  done
+}
+
+type_secret() {
+  local value="$1"
+
+  printf '%s' "$value" | xdotool type --clearmodifiers --delay "$SWTOR_TYPE_DELAY_MS" --file -
+}
+
+fetch_password() {
+  run_op_item_get --fields password --reveal
+}
+
+fetch_otp() {
+  run_op_item_get --otp
+}
+
+fill_launcher() {
+  local window_id="$1"
+  local password="$2"
+  local otp="$3"
+
+  info "activating launcher window $window_id"
+  xdotool windowactivate --sync "$window_id"
+  sleep "$SWTOR_INITIAL_DELAY"
+
+  press_tabs "$SWTOR_TABS_TO_PASSWORD"
+  type_secret "$password"
+
+  press_tabs "$SWTOR_TABS_TO_OTP"
+  if (( SWTOR_OTP_WAIT_SECONDS > 0 )); then
+    sleep "$SWTOR_OTP_WAIT_SECONDS"
+  fi
+  type_secret "$otp"
+
+  info "filled password and one-time code; Login was not submitted"
+}
+
+main() {
+  while (($#)); do
+    case "$1" in
+      --check)
+        MODE="check"
+        ;;
+      --no-launch)
+        MODE="no-launch"
+        ;;
+      --init-config)
+        MODE="init-config"
+        ;;
+      --test-notify)
+        MODE="test-notify"
+        ;;
+      --help|-h)
+        usage
+        exit 0
+        ;;
+      *)
+        die "unknown option: $1"
+        ;;
+    esac
+    shift
+  done
+
+  load_config
+
+  if [[ "$MODE" == "init-config" ]]; then
+    write_default_config
+    return 0
+  fi
+
+  if [[ "$MODE" == "test-notify" ]]; then
+    notify normal "SWTOR autofill" "Desktop notifications are working."
+    printf 'swtor-login: sent test notification\n' >&2
+    return 0
+  fi
+
+  check_dependencies
+  check_1password_access
+
+  if [[ "$MODE" == "check" ]]; then
+    info "dependencies and 1Password access look usable"
+    return 0
+  fi
+
+  if [[ "$MODE" == "launch" ]]; then
+    launch_swtor
+  else
+    info "using already-open launcher"
+  fi
+
+  local window_id password otp
+  window_id="$(wait_for_window)"
+  password="$(fetch_password)"
+  otp="$(fetch_otp)"
+
+  fill_launcher "$window_id" "$password" "$otp"
+}
+
+main "$@"
